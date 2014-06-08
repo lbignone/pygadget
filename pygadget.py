@@ -401,6 +401,9 @@ class Simulation:
                 if self.particle_mass[key] == 0:
                     if self.particle_numbers[key] != 0:
                         particle_number[key] = self.particle_numbers[key]
+        elif block_type in ["age"]:
+            for key in ["stars"]:
+                particle_number[key] = self.particle_numbers[key]
 
         order = self.particle_keys.index(particle_type)
         offset = 0
