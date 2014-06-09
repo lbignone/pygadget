@@ -24,7 +24,7 @@ example::
     snap = Simulation("filename", pot=False, accel=False, endt=False, tstp=True)
 
 After initialization the snapshot header information can be access as class
-attributes. For example::
+attributes. For example:
 
     snap.h
 
@@ -35,7 +35,7 @@ attributes. For example::
     snap.particle_numbers
 
 For convenience a summary of the snapshot properties can be display by
-printing the ``Simulation`` class instance::
+printing the ``Simulation`` class instance:
 
     print(sim)
 
@@ -43,7 +43,7 @@ printing the ``Simulation`` class instance::
 
 For performance reasons blocks are only read on demand, for a specified
 particle type. The ``read_block()`` method is used for
-this task::
+this task:
 
     gas_pos = snap.read_block("pos", "gas")
 
@@ -82,13 +82,13 @@ Most block types return a 1D ndarray. The exceptions being "pos", "vel" and
 axis. And "metals" which return a 2D array with 12 columns representing each of
 the chemical elements consider in the simulation.
 
-Slicing and array operations can be used to manipulate data. For example::
+Slicing and array operations can be used to manipulate data. For example:
 
     composition = snap.read_block("metals", "stars")
     composition[:,0]
 
 Should return the helium mass content for every stellar particle in the
-snapshot. Similarly::
+snapshot. Similarly:
 
     halo_pos = snap.read_block("pos", "halo")
     pos[:,1]
