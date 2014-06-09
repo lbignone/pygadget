@@ -308,7 +308,7 @@ class Simulation:
 
         Note:
             This functions only works for data blocks, to access header
-            information use the 'Simulation' class attributes.
+            information use the `Simulation` class attributes.
         """
 
         s = self.swap
