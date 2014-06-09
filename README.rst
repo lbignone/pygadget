@@ -99,6 +99,12 @@ snapshot. Similarly::
 
 Should return the 'y' coordinate for every halo particle.
 
+Caveats
+=======
 
+* Very early version!!!
+* No multi-file support yet
+* Endianness was considered but is untested
+* I was using python3 during development and didn't pay too much attention to backwards compatibility.
 
 .. _`Numpy`: http://www.numpy.org/
