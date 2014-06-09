@@ -1,22 +1,20 @@
-========
-Overview
-========
+# Overview
+
 
 Pygadget is a python module for handling GADGET3 binary snapshots. Its goal is
 to provide a fast and intuitive way to access cosmological simulation data.
 
-Requirements
-============
+## Requirements
 
 There is only one requirement:
 
-* `Numpy`_
+* [Numpy][numpy]
 
-Basic usage
-===========
+## Basic usage
 
-Snapshots can be easily access using the ``Simulation`` class::
+Snapshots can be easily access using the `Simulation` class:
     
+    ::: python
     from pygadget import Simulation
     snap = Simulation("filename")
 
