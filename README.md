@@ -105,4 +105,4 @@ Caveats
 * Endianness was considered but is untested
 * I was using python3 during development and didn't pay too much attention to backwards compatibility.
 
-.. _`Numpy`: http://www.numpy.org/
+[numpy]: http://www.numpy.org/
