@@ -51,7 +51,7 @@ this task::
 
     gas_pos = snap.read_block("pos", "gas")
 
- Accepted keywords for block types are:
+Accepted keywords for block types are:
 
 * "pos"
 * "vel"
