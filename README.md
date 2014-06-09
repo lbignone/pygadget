@@ -39,8 +39,7 @@ printing the ``Simulation`` class instance::
 
     print(sim)
 
-Reading blocks
-==============
+## Reading blocks
 
 For performance reasons blocks are only read on demand, for a specified
 particle type. The ``read_block()`` method is used for
@@ -96,8 +95,7 @@ snapshot. Similarly::
 
 Should return the 'y' coordinate for every halo particle.
 
-Caveats
-=======
+## Caveats
 
 * Very early version!!!
 * No multi-file support yet
