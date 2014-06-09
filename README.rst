@@ -46,7 +46,7 @@ Reading blocks
 ==============
 
 For performance reasons blocks are only read on demand for a specified
-particle type. The ``read_block(block_type, particle_type)`` method is use for
+particle type. The ``read_block()`` method is use for
 this task::
 
     gas_pos = snap.read_block("pos", "gas")
