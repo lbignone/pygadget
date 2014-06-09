@@ -14,7 +14,6 @@ There is only one requirement:
 
 Snapshots can be easily access using the `Simulation` class:
     
-    ::: python
     from pygadget import Simulation
     snap = Simulation("filename")
 
