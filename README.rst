@@ -15,7 +15,7 @@ There is only one requirement:
 Basic usage
 ===========
 
-Snapshots can be easily access using the `Simulation` class::
+Snapshots can be easily access using the ``Simulation`` class::
     
     from pygadget import Simulation
     snap = Simulation("filename")
@@ -38,15 +38,15 @@ attributes. For example::
     snap.particle_numbers
 
 For convenience a summary of the snapshot properties can be display by
-printing the `Simulation` instance::
+printing the ``Simulation`` class instance::
 
     print(sim)
 
 Reading blocks
 ==============
 
-For performance reasons blocks are only read on demand for a specified
-particle type. The ``read_block()`` method is use for
+For performance reasons blocks are only read on demand, for a specified
+particle type. The ``read_block()`` method is used for
 this task::
 
     gas_pos = snap.read_block("pos", "gas")
