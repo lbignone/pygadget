@@ -83,7 +83,7 @@ And accepted keywords for particle types are:
 
 Most block types return a 1D ndarray. The exceptions being "pos", "vel" and
 "accel" which return a 2D ndarray with three columns representing Cartesian
-axis and "metals" which return a 2D array with 12 columns representing each of
+axis. And "metals" which return a 2D array with 12 columns representing each of
 the chemical elements consider in the simulation.
 
 Slicing and array operations can be used to manipulate data. For example::
