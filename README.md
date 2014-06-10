@@ -23,7 +23,7 @@ example::
 
     snap = Simulation("filename", pot=False, accel=False, endt=False, tstp=True)
 
-After initialization the snapshot header information can be access as class
+After initialization the snapshot header information can be access as object
 attributes. For example:
 
     snap.h
