@@ -33,6 +33,52 @@ class Simulation:
             ('<': little-endian, '>': big-endian).
     """
 
+    particle_keys = [
+        "gas",
+        "halo",
+        "disk",
+        "buldge",
+        "stars",
+        "bndry",
+    ]
+
+    block_keys = [
+        "header",
+        "pos",
+        "vel",
+        "id",
+        "mass",
+        "u",
+        "rho",
+        "ne",
+        "nh",
+        "hsml",
+        "sfr",
+        "age",
+        "metals",
+        "pot",
+        "accel",
+        "endt",
+        "tstp",
+        "esn",
+        "esncold",
+    ]
+
+    element_keys = [
+        "He",
+        "C",
+        "Mg",
+        "O",
+        "Fe",
+        "Si",
+        "H",
+        "N",
+        "Ne",
+        "S",
+        "Ca",
+        "Zi",
+    ]
+
     def __init__(self, name, pot=False,
                  accel=False, endt=False, tstp=False):
         """'Simulation' initialization
@@ -56,52 +102,6 @@ class Simulation:
         self.flags["accel"] = accel
         self.flags["endt"] = endt
         self.flags["tstp"] = tstp
-
-        self.particle_keys = [
-            "gas",
-            "halo",
-            "disk",
-            "buldge",
-            "stars",
-            "bndry",
-        ]
-
-        self.block_keys = [
-            "header",
-            "pos",
-            "vel",
-            "id",
-            "mass",
-            "u",
-            "rho",
-            "ne",
-            "nh",
-            "hsml",
-            "sfr",
-            "age",
-            "metals",
-            "pot",
-            "accel",
-            "endt",
-            "tstp",
-            "esn",
-            "esncold",
-        ]
-
-        self.element_keys = [
-            "He",
-            "C",
-            "Mg",
-            "O",
-            "Fe",
-            "Si",
-            "H",
-            "N",
-            "Ne",
-            "S",
-            "Ca",
-            "Zi",
-        ]
 
         self._read_header()
 
