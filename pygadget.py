@@ -579,3 +579,9 @@ class Fof:
                                                       count=count)
                         self.ids.append(ids)
                     group += 1
+
+    def read_block_by_group(self, block_type, particle_type, group):
+        ids = self.ids[group][particle_type]
+        block = self.snap.filter_by_ids(block_type, particle_type, ids)
+
+        return block
