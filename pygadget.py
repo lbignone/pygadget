@@ -577,7 +577,7 @@ class Fof:
                         count = self.grouplentype[group, p_type_n]
                         ids[particle_type] = fromfile(f, dtype="u4",
                                                       count=count)
-                        self.ids.append(ids)
+                    self.ids.append(ids)
                     group += 1
 
     def read_block_by_group(self, block_type, particle_type, group):
