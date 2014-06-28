@@ -385,10 +385,14 @@ class Simulation:
 
         dim = 1
 
-        if block_type in ["pos", "vel", "accel", "pot", "tstp"]:
+        if block_type in ["id", "pos", "vel", "accel", "pot", "tstp"]:
             particle_number = self.particle_numbers
             if block_type in ["pos", "vel", "accel"]:
                 dim = 3
+
+        elif block_type in ["u", "rho", "ne", "nh", "hsml", "sfr", "endt"]:
+            for key in ["gas"]:
+                particle_number[key] = self.particle_numbers[key]
 
         elif block_type in ["esn", "esncold", "metals"]:
             for key in ["gas", "stars"]:
@@ -401,6 +405,7 @@ class Simulation:
                 if self.particle_mass[key] == 0:
                     if self.particle_numbers[key] != 0:
                         particle_number[key] = self.particle_numbers[key]
+
         elif block_type in ["age"]:
             for key in ["stars"]:
                 particle_number[key] = self.particle_numbers[key]
