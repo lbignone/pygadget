@@ -1,5 +1,5 @@
 from struct import unpack
-from numpy import fromstring, fromfile, concatenate
+from numpy import fromstring, fromfile, concatenate, where
 
 particle_keys = [
     "gas",
@@ -436,6 +436,17 @@ class Simulation:
         remainder *= dim
 
         return offset, read_size, remainder
+
+    def filter_by_ids(self, block_type, particle_type, ids=[]):
+        id_block = self.read_block("id", particle_type)
+
+        block = self.read_block(block_type, particle_type)
+        if not ids:
+            return block
+
+        index = [where(id_block == id)[0][0] for id in ids]
+
+        return block[index]
 
     def __repr__(self):
 
