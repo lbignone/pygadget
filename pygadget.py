@@ -441,7 +441,7 @@ class Simulation:
         id_block = self.read_block("id", particle_type)
 
         block = self.read_block(block_type, particle_type)
-        if not ids:
+        if len(ids) == 0:
             return block
 
         index = [where(id_block == id)[0][0] for id in ids]
