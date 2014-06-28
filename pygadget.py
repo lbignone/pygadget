@@ -1,5 +1,14 @@
 from struct import unpack
-from numpy import fromstring
+from numpy import fromstring, fromfile, concatenate
+
+particle_keys = [
+    "gas",
+    "halo",
+    "disk",
+    "buldge",
+    "stars",
+    "bndry",
+]
 
 
 class Simulation:
@@ -33,52 +42,6 @@ class Simulation:
             ('<': little-endian, '>': big-endian).
     """
 
-    particle_keys = [
-        "gas",
-        "halo",
-        "disk",
-        "buldge",
-        "stars",
-        "bndry",
-    ]
-
-    block_keys = [
-        "header",
-        "pos",
-        "vel",
-        "id",
-        "mass",
-        "u",
-        "rho",
-        "ne",
-        "nh",
-        "hsml",
-        "sfr",
-        "age",
-        "metals",
-        "pot",
-        "accel",
-        "endt",
-        "tstp",
-        "esn",
-        "esncold",
-    ]
-
-    element_keys = [
-        "He",
-        "C",
-        "Mg",
-        "O",
-        "Fe",
-        "Si",
-        "H",
-        "N",
-        "Ne",
-        "S",
-        "Ca",
-        "Zi",
-    ]
-
     def __init__(self, name, pot=False,
                  accel=False, endt=False, tstp=False):
         """'Simulation' initialization
@@ -102,6 +65,52 @@ class Simulation:
         self.flags["accel"] = accel
         self.flags["endt"] = endt
         self.flags["tstp"] = tstp
+
+        self.particle_keys = [
+            "gas",
+            "halo",
+            "disk",
+            "buldge",
+            "stars",
+            "bndry",
+        ]
+
+        self.block_keys = [
+            "header",
+            "pos",
+            "vel",
+            "id",
+            "mass",
+            "u",
+            "rho",
+            "ne",
+            "nh",
+            "hsml",
+            "sfr",
+            "age",
+            "metals",
+            "pot",
+            "accel",
+            "endt",
+            "tstp",
+            "esn",
+            "esncold",
+        ]
+
+        self.element_keys = [
+            "He",
+            "C",
+            "Mg",
+            "O",
+            "Fe",
+            "Si",
+            "H",
+            "N",
+            "Ne",
+            "S",
+            "Ca",
+            "Zi",
+        ]
 
         self._read_header()
 
@@ -457,3 +466,105 @@ class Simulation:
         string += "flags: %s" % self.flags
 
         return string
+
+
+class Fof:
+
+    def __init__(self, basedir, num):
+        self.basedir = basedir
+        self.num = num
+
+        self.name = basedir
+        self.name += "/groups_{0:03d}/group_tab_{0:03d}.0".format(self.num)
+
+        self._read_header()
+        self._load_catalogue()
+        self._load_ids()
+
+    def _read_header(self):
+
+        header_keys = [
+            "totngroups",
+            "ntask",
+        ]
+        with open(self.name, 'rb') as f:
+
+            f.seek(8, 0)
+            for key in header_keys:
+                value = fromfile(f, dtype="i4", count=1)[0]
+                setattr(self, key, value)
+
+    def _load_catalogue(self):
+
+        basename = self.basedir
+        basename += "/groups_{0:03d}/group_tab_{0:03d}.".format(self.num)
+
+        dims = 3
+        n_particle_types = len(particle_keys)
+
+        array_keys = [
+            "grouplen",
+            "groupoffset",
+            "grouplentype",
+            "groupmasstype",
+            "groupcm",
+            "groupsfr",
+        ]
+
+        self.ngroups = []
+        self.nids = []
+
+        value = {}
+        for i in range(self.ntask):
+            name = basename + "{0}".format(i)
+            with open(name, 'rb') as f:
+
+                ngroups = fromfile(f, dtype="i4", count=1)[0]
+                self.ngroups.append(ngroups)
+
+                nids = fromfile(f, dtype="i4", count=1)[0]
+                self.nids.append(nids)
+
+                f.seek(2*4, 1)
+
+                data_types = {
+                    "grouplen": "({0},)i4".format(ngroups),
+                    "groupoffset": "({0},)i4".format(ngroups),
+                    "grouplentype": "({0},{1})i4".format(ngroups,
+                                                         n_particle_types),
+                    "groupmasstype": "({0},{1})f8".format(ngroups,
+                                                          n_particle_types),
+                    "groupcm": "({0},{1})f4".format(ngroups, dims),
+                    "groupsfr": "({0},)f4".format(ngroups),
+                }
+
+                for key in array_keys:
+                    dt = data_types[key]
+                    data = fromfile(f, dtype=dt, count=1)[0]
+
+                    if i == 0:
+                        value[key] = data
+                    else:
+                        value[key] = concatenate([value[key], data])
+
+        for key in array_keys:
+            setattr(self, key, value[key])
+
+    def _load_ids(self):
+        basename = self.basedir
+        basename += "/groups_{0:03d}/group_ids_{0:03d}.".format(self.num)
+
+        self.ids = []
+        group = 0
+        for i in range(self.ntask):
+            name = basename + "{0}".format(i)
+            with open(name, 'rb') as f:
+                f.seek(4*4, 0)
+                for j in range(self.ngroups[i]):
+                    ids = {}
+                    for p_type_n, particle_type in enumerate(particle_keys):
+                        count = self.grouplentype[group, p_type_n]
+                        ids[particle_type] = fromfile(f, dtype="u4",
+                                                      count=count)
+                        self.ids.append(ids)
+                    group += 1
