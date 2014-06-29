@@ -451,10 +451,8 @@ class Simulation:
 
         id_block = pd.Series(id_block, name="id")
         block = pd.DataFrame(block, columns=column_names)
-        block = pd.concat([id_block, block], axis=1)
 
-        values = {"id": ids}
-        mask = block.isin(values).any(1)
+        mask = id_block.isin(ids)
 
         return block[mask]
 
