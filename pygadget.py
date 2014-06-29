@@ -1,6 +1,7 @@
 from struct import unpack
 from numpy import fromstring, fromfile, concatenate
 import pandas as pd
+from functools import wraps
 
 particle_keys = [
     "gas",
@@ -10,6 +11,17 @@ particle_keys = [
     "stars",
     "bndry",
 ]
+
+
+def memoize(func):
+    cache = {}
+
+    @wraps(func)
+    def wrap(*args):
+        if args not in cache:
+            cache[args] = func(*args)
+        return cache[args]
+    return wrap
 
 
 class Simulation:
@@ -297,6 +309,7 @@ class Simulation:
 
         f.close()
 
+    @memoize
     def read_block(self, block_type, particle_type):
         """Read block from snapshot file
 
@@ -489,7 +502,7 @@ class Simulation:
 
 class Fof:
 
-    def __init__(self, basedir, num):
+    def __init__(self, basedir, num, snap=None):
         self.basedir = basedir
         self.num = num
 
@@ -499,6 +512,8 @@ class Fof:
         self._read_header()
         self._load_catalogue()
         self._load_ids()
+
+        self.snap = snap
 
     def _read_header(self):
 
@@ -593,3 +608,6 @@ class Fof:
         block = self.snap.filter_by_ids(block_type, particle_type, ids)
 
         return block
+
+
+
