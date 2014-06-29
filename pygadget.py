@@ -1,5 +1,6 @@
 from struct import unpack
-from numpy import fromstring, fromfile, concatenate, where
+from numpy import fromstring, fromfile, concatenate
+import pandas as pd
 
 particle_keys = [
     "gas",
@@ -439,14 +440,23 @@ class Simulation:
 
     def filter_by_ids(self, block_type, particle_type, ids=[]):
         id_block = self.read_block("id", particle_type)
-
         block = self.read_block(block_type, particle_type)
-        if len(ids) == 0:
-            return block
 
-        index = [where(id_block == id)[0][0] for id in ids]
+        if block_type in ["pos", "vel", "accel"]:
+            column_names = ["x", "y", "z"]
+        elif block_type in ["metals"]:
+            column_names = self.element_keys
+        else:
+            column_names = [block_type]
 
-        return block[index]
+        id_block = pd.Series(id_block, name="id")
+        block = pd.DataFrame(block, columns=column_names)
+        block = pd.concat([id_block, block], axis=1)
+
+        values = {"id": ids}
+        mask = block.isin(values).any(1)
+
+        return block[mask]
 
     def __repr__(self):
 
