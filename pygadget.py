@@ -1,7 +1,9 @@
 from struct import unpack
-from numpy import fromstring, fromfile, concatenate
+from numpy import fromstring, fromfile, concatenate, array
 import pandas as pd
 from functools import wraps
+#from astropy.utils.console import ProgressBar
+
 
 particle_keys = [
     "gas",
@@ -12,6 +14,21 @@ particle_keys = [
     "bndry",
 ]
 
+element_keys = [
+    "He",
+    "C",
+    "Mg",
+    "O",
+    "Fe",
+    "Si",
+    "H",
+    "N",
+    "Ne",
+    "S",
+    "Ca",
+    "Zi",
+]
+
 
 def memoize(func):
     cache = {}
@@ -19,6 +36,7 @@ def memoize(func):
     @wraps(func)
     def wrap(*args):
         if args not in cache:
+            print("hola")
             cache[args] = func(*args)
         return cache[args]
     return wrap
@@ -389,6 +407,19 @@ class Simulation:
 
         block.shape = shape
 
+        if block_type in ["pos", "vel", "accel"]:
+            columns = ['x', 'y', 'z']
+        elif block_type in ["metals"]:
+            columns = element_keys
+        else:
+            columns = [block_type]
+
+        if block_type != "id":
+            ids = self.read_block("id", particle_type)
+            block = pd.DataFrame(block, columns=columns, index=ids.values)
+        else:
+            block = pd.Series(block, name="id")
+
         return block
 
     def _compute_offset(self, block_type, particle_type):
@@ -452,22 +483,10 @@ class Simulation:
         return offset, read_size, remainder
 
     def filter_by_ids(self, block_type, particle_type, ids=[]):
-        id_block = self.read_block("id", particle_type)
+
         block = self.read_block(block_type, particle_type)
 
-        if block_type in ["pos", "vel", "accel"]:
-            column_names = ["x", "y", "z"]
-        elif block_type in ["metals"]:
-            column_names = self.element_keys
-        else:
-            column_names = [block_type]
-
-        id_block = pd.Series(id_block, name="id")
-        block = pd.DataFrame(block, columns=column_names)
-
-        mask = id_block.isin(ids)
-
-        return block[mask]
+        return block.loc[ids].dropna()
 
     def __repr__(self):
 
@@ -610,4 +629,184 @@ class Fof:
         return block
 
 
+class Subfind:
 
+    def __init__(self, basedir, num, snap=None):
+        self.basedir = basedir + "/postproc_{0:03d}/".format(num)
+        self.num = num
+        self.snap = snap
+
+        self.basename = basedir
+        self.basename += "/postproc_{0:03d}/sub_tab_{0:03d}.".format(self.num)
+
+        folder = "/postproc_{0:03d}/".format(self.num)
+        self.locationsname = basedir + folder + "locations.h5"
+
+        self._read_header()
+        self._load_catalogue()
+        self._load_ids()
+
+    def _read_header(self):
+
+        name = self.basedir + "sub_tab_{0:03d}.{1}".format(self.num, 0)
+
+        self.ngroups = []
+        self.nids = []
+        header_keys = [
+            "totngroups",
+            "ntask",
+        ]
+        self.nsubhalos = []
+        with open(name, 'rb') as f:
+            f.seek(8, 0)
+            for key in header_keys:
+                value = fromfile(f, dtype="i4", count=1)[0]
+                setattr(self, key, value)
+
+        self.ntask = 1
+
+        for i in range(self.ntask):
+            name = self.basename + "{0}".format(i)
+
+            with open(name, 'rb') as f:
+                f.seek(0, 0)
+                value = fromfile(f, dtype="i4", count=1)[0]
+                self.ngroups.append(value)
+
+                value = fromfile(f, dtype="i4", count=1)[0]
+                self.nids.append(value)
+
+                f.seek(8, 1)
+
+                value = fromfile(f, dtype="i4", count=1)[0]
+                self.nsubhalos.append(value)
+
+    def _load_catalogue(self):
+
+        array_keys = [
+            "nsubperhalo",
+            "firstsubofhalo",
+            "sublen",
+            "suboffset",
+            "subparenthalo",
+            "halo_m_mean200",
+            "halo_r_mean200",
+            "halo_m_crit200",
+            "halo_r_crit200",
+            "halo_m_tophat200",
+            "halo_r_tophat200",
+            "subpos",
+            "subvel",
+            "subveldisp",
+            "subvmax",
+            "subspin",
+            "submostboundid",
+            "subhalfmass",
+        ]
+
+        dims = 3
+        value = {}
+        for i in range(self.ntask):
+            name = self.basedir + "sub_tab_{0:03d}.{1}".format(self.num, i)
+            ngroups = self.ngroups[i]
+            nsubhalos = self.nsubhalos[i]
+
+            data_types = {
+                "nsubperhalo": "({0},)i4".format(ngroups),
+                "firstsubofhalo": "({0},)i4".format(ngroups),
+
+                "sublen": "({0},)i4".format(nsubhalos),
+                "suboffset": "({0},)i4".format(nsubhalos),
+                "subparenthalo": "({0},)i4".format(nsubhalos),
+
+                "halo_m_mean200": "({0},)f4".format(ngroups),
+                "halo_r_mean200": "({0},)f4".format(ngroups),
+                "halo_m_crit200": "({0},)f4".format(ngroups),
+                "halo_r_crit200": "({0},)f4".format(ngroups),
+                "halo_m_tophat200": "({0},)f4".format(ngroups),
+                "halo_r_tophat200": "({0},)f4".format(ngroups),
+
+                "subpos": "({0},{1})f4".format(nsubhalos, dims),
+                "subvel": "({0},{1})f4".format(nsubhalos, dims),
+                "subspin": "({0},{1})f4".format(nsubhalos, dims),
+
+                "subveldisp": "({0},)f4".format(nsubhalos),
+                "subvmax": "({0},)f4".format(nsubhalos),
+                "subhalfmass": "({0},)f4".format(nsubhalos),
+
+                "submostboundid": "({0},)i8".format(nsubhalos),
+            }
+            with open(name, 'rb') as f:
+                f.seek(5*4, 0)
+                for key in array_keys:
+                    dt = data_types[key]
+                    data = fromfile(f, dtype=dt, count=1)[0]
+
+                    if i == 0:
+                        value[key] = data
+                    else:
+                        value[key] = concatenate([value[key], data])
+
+        for key in array_keys:
+            setattr(self, key, value[key])
+
+    def _load_ids(self):
+        basename = self.basedir
+        basename += "sub_ids_{0:03d}.".format(self.num)
+
+        for i in range(self.ntask):
+            name = basename + "{0}".format(i)
+            with open(name, 'rb') as f:
+                f.seek(4*4, 0)
+                nids = self.nids[i]
+                ids = fromfile(f, dtype="i8", count=nids)
+            if i == 0:
+                all_ids = ids
+            else:
+                all_ids = concatenate(self.ids, ids)
+
+        self.ids = []
+        for sub in range(self.nsubhalos[0]):
+            nmin = self.suboffset[sub]
+            nmax = nmin + self.sublen[sub]
+            self.ids.append(all_ids[nmin:nmax])
+
+    def _locate_particles(self, subhalo):
+
+        locations = {}
+        for key in particle_keys:
+            snap_ids = self.snap.read_block("id", key)
+            if len(snap_ids) > 0:
+                mask = snap_ids.isin(self.ids[subhalo])
+                ind = snap_ids[mask].index
+                locations[key] = ind
+
+        return locations
+
+    def _save_locations(self):
+
+        print("Calculating locations")
+
+        nsubhalos = 10
+
+        ind = {}
+        #with ProgressBar(nsubhalos) as bar:
+        for subhalo in range(nsubhalos):
+            location = self._locate_particles(subhalo)
+            s = pd.Series(location)
+            key = "%d" % subhalo
+            ind[key] = s
+        #       bar.update()
+
+        store = pd.HDFStore(self.locationsname)
+        for key in ind:
+            store[key] = ind[key]
+        store.close()
+
+    def read_block_by_subhalo(self, block_type, particle_type, subhalo):
+
+        block = self.snap.read_block(block_type, particle_type)
+
+        sub_ids = self.ids[subhalo]
+
+        return block.loc[sub_ids].dropna()
