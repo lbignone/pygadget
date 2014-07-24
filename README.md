@@ -95,11 +95,43 @@ snapshot. Similarly:
 
 Should return the 'y' coordinate for every halo particle.
 
+## Subfind
+
+The Subfind interface works very similarly to snapshots. The following code
+sets the subfind objects
+
+    sub = Subfind(basedir=dir, num=0, snap=snapshot)
+
+where `dir` is the base directory for subfind folders, `num` the desired
+subfind folder and `snapshot` the associated Simulation object snapshot.
+
+All subfind catalog properties can be access trough object attributes like
+
+    sub.nshubalos
+
+    sub.sublen
+
+Subhalo particles can be read with
+
+    pos = sub.read_block_by_subhalo(block_type, particle_type, subhalo_number)
+
+The output is the same as Simulation.read_block, but particles are filtered
+down to the ones in the required subhalo
+
+A few extra methods are included
+
+    sub.optical_radius(subhalo, factor=0.83, rcut=30.0)
+
+to calculate subhalos optical radius and
+
+    sub.mass_inside_radius(self, radius, subhalo, particle_keys=particle_keys)
+
+to calculate the mass inside a give radius
+
+
 ## Caveats
 
-* Very early version!!!
 * No multi-file support yet
 * Endianness was considered but is untested
-* I was using python3 during development and didn't pay too much attention to backwards compatibility.
 
 [numpy]: http://www.numpy.org/
