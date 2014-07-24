@@ -1,5 +1,9 @@
+# Author: Lucas A. Bignone
+# Contact: lbignone@iafe.uba.ar
+
 from struct import unpack
-from numpy import fromstring, fromfile, concatenate, array
+from numpy import fromstring, fromfile, concatenate
+from numpy import sqrt, searchsorted
 import pandas as pd
 from functools import wraps
 #from astropy.utils.console import ProgressBar
@@ -31,12 +35,12 @@ element_keys = [
 
 
 def memoize(func):
+    """Memoization decorator"""
     cache = {}
 
     @wraps(func)
     def wrap(*args):
         if args not in cache:
-            print("hola")
             cache[args] = func(*args)
         return cache[args]
     return wrap
@@ -89,6 +93,8 @@ class Simulation:
             tstp (bool):    Flag to signal presence of timesteps block.
                 Defaults to False.
         """
+
+        self.cache = {}
 
         self.name = name
         self.flags = {}
@@ -327,7 +333,6 @@ class Simulation:
 
         f.close()
 
-    @memoize
     def read_block(self, block_type, particle_type):
         """Read block from snapshot file
 
@@ -336,13 +341,15 @@ class Simulation:
             particle_type (str): Type of particle.
 
         Returns:
-            Numpy ndarray containing the block data for the specified particle
-            type.
+            Panda DataFrame containing the block data for the specified
+            particle type, indexed by particles ids
 
-            The shape of the ndarray is specified by the block type. In the
-            case of 'pos', 'vel' and 'accel' blocks, shape = (particle_number,
-            3). For the 'metals' block, shape = (particle_number, number of
-            elements). All other blocks return a 1-dimensional ndarray.
+            The columns in the DataFrame are determined by the block type.
+            In the case of 'pos', 'vel' and 'accel' blocks, columns are 'x',
+            'y' and 'z'. For the 'metals' block, column names correspond to
+            each elemet_type.
+            All other blocks return a 1-column DataFrame named after the
+            block_type.
 
         Raises:
             NameError:  If block limits do not not match expected size.
@@ -351,6 +358,10 @@ class Simulation:
             This functions only works for data blocks, to access header
             information use the `Simulation` class attributes.
         """
+
+        cache_key = (block_type, particle_type)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
 
         s = self.swap
 
@@ -420,6 +431,8 @@ class Simulation:
         else:
             block = pd.Series(block, name="id")
 
+        self.cache[cache_key] = block
+
         return block
 
     def _compute_offset(self, block_type, particle_type):
@@ -483,6 +496,16 @@ class Simulation:
         return offset, read_size, remainder
 
     def filter_by_ids(self, block_type, particle_type, ids=[]):
+        """Return a block filtered by particle ids
+
+        Args:
+            block_type (str):   Type of block.
+            particle_type (str): Type of particle.
+            ids (iterable): list of ids to return
+
+        Returns:
+            Pandas DataFrame as returned by read_block
+        """
 
         block = self.read_block(block_type, particle_type)
 
@@ -631,7 +654,47 @@ class Fof:
 
 class Subfind:
 
+    """ Base class for  handling subfind output
+
+    Attributes:
+        basedir (str): Base directory for subfind output
+        basename (str): Base name for subfind output
+        num (int): Number of subfind output
+        snap (Simulation): Associated Simulation object
+        ngroups (int): Number of halos
+        nsubhalos (int): Number of subhalos
+        nids (int): Number of particles
+        ids (list): List containing arrays with ids for particles in each
+                    subhalo
+        nsubperhalo (array): Number of subhalos per halo
+        firstsubofhalo (array): First subhalo index per halo
+        sublen (array): Size of each subhalo
+        suboffset (array): Offset index from the beginning for each subhalo
+        subparenthalo (array): Parent halo of each subhalo
+        halo_m_mean200 (array):
+        halo_r_mean200 (array):
+        halo_m_crit200 (array):
+        halo_r_crit200 (array):
+        halo_m_tophat200 (array):
+        halo_r_tophat200 (array):
+        subpos (2d array): Subhalo position
+        subvel (2d array): Subhalo velocities
+        subveldisp (2d array): Subhalo velocity dispersions
+        subvmax (2d array): Subhalo maximum velocity
+        subspin (2d array): Subhalo spin
+        submostboundid (array): Subhalo id for most bound particle
+        subhalfmass (array): Half mass of each subhalo
+    """
+
     def __init__(self, basedir, num, snap=None):
+        """Subfind initialization
+
+        Args:
+            basedir: Subfind base directory
+            num: Subfind number
+            snap: Associated Simulation object
+        """
+
         self.basedir = basedir + "/postproc_{0:03d}/".format(num)
         self.num = num
         self.snap = snap
@@ -647,6 +710,7 @@ class Subfind:
         self._load_ids()
 
     def _read_header(self):
+        """Read subfind header. Store ngrous, nids and nsubhalos"""
 
         name = self.basedir + "sub_tab_{0:03d}.{1}".format(self.num, 0)
 
@@ -682,6 +746,7 @@ class Subfind:
                 self.nsubhalos.append(value)
 
     def _load_catalogue(self):
+        """Loads subfind catalogue"""
 
         array_keys = [
             "nsubperhalo",
@@ -751,6 +816,9 @@ class Subfind:
             setattr(self, key, value[key])
 
     def _load_ids(self):
+        """Populates the ids list attribute with id arrays for particles
+        in each subhalo
+        """
         basename = self.basedir
         basename += "sub_ids_{0:03d}.".format(self.num)
 
@@ -771,42 +839,102 @@ class Subfind:
             nmax = nmin + self.sublen[sub]
             self.ids.append(all_ids[nmin:nmax])
 
-    def _locate_particles(self, subhalo):
-
-        locations = {}
-        for key in particle_keys:
-            snap_ids = self.snap.read_block("id", key)
-            if len(snap_ids) > 0:
-                mask = snap_ids.isin(self.ids[subhalo])
-                ind = snap_ids[mask].index
-                locations[key] = ind
-
-        return locations
-
-    def _save_locations(self):
-
-        print("Calculating locations")
-
-        nsubhalos = 10
-
-        ind = {}
-        #with ProgressBar(nsubhalos) as bar:
-        for subhalo in range(nsubhalos):
-            location = self._locate_particles(subhalo)
-            s = pd.Series(location)
-            key = "%d" % subhalo
-            ind[key] = s
-        #       bar.update()
-
-        store = pd.HDFStore(self.locationsname)
-        for key in ind:
-            store[key] = ind[key]
-        store.close()
-
     def read_block_by_subhalo(self, block_type, particle_type, subhalo):
+        """Read snapshot block  filtered by subhalo
+
+        Args:
+            block_type (str):   Type of block.
+            particle_type (str): Type of particle.
+            subhalo (int): number of subhalo to read
+
+        Returns:
+            Pandas DataFrame as returned by read_block
+        """
 
         block = self.snap.read_block(block_type, particle_type)
 
         sub_ids = self.ids[subhalo]
 
         return block.loc[sub_ids].dropna()
+
+    def optical_radius(self, subhalo, factor=0.83, rcut=30.0):
+        """Compute optical radius for a given subhalo
+
+        Args:
+            subhalo: subhalo
+            factor (default = 0.83): mass factor to multiply the total mass.
+            rcut (default = 30.0): radius at witch to compute the total mass.
+
+        Returns:
+            Optical radius in gadget internal Units.
+            If no baryons are present returns 0.0
+        """
+
+        cm = self.subpos[subhalo]
+
+        pos_stars = self.read_block_by_subhalo("pos", "stars", subhalo)
+        mass_stars = self.read_block_by_subhalo("mass", "stars", subhalo)
+
+        pos_gas = self.read_block_by_subhalo("pos", "gas", subhalo)
+        mass_gas = self.read_block_by_subhalo("mass", "gas", subhalo)
+
+        pos = concatenate([pos_stars, pos_gas])
+        mass = concatenate([mass_stars, mass_gas])
+
+        if (mass.size == 0):
+            return 0.0
+
+        r = sqrt(((pos-cm)**2).sum(axis=1))
+
+        sort_ind = r.argsort()
+        sort_r = r[sort_ind]
+        sort_mass = mass[sort_ind]
+        total_mass = sort_mass.cumsum()
+
+        rcut_ind = searchsorted(sort_r, rcut) - 1
+
+        mcut = total_mass[rcut_ind]
+        mass_factor = factor * mcut
+
+        ropt_ind = searchsorted(total_mass, mass_factor) - 1
+
+        return sort_r[ropt_ind]
+
+    def mass_inside_radius(self, radius, subhalo, particle_keys=particle_keys):
+        """Compute subhalo mass inside a given radius
+
+        Args:
+            radius: radius in Gadget internal units
+            subhalo: subhalo number
+            particle_keys (optional): list containing particles types for witch
+            to compute the mass
+
+        Returns:
+            Dictionary containing mass inside radius for each particle
+            type specified in particle_keys
+        """
+
+        mass_inside = {}
+        total_mass_inside = 0
+        cm = self.subpos[subhalo]
+        for key in particle_keys:
+            try:
+                pos = self.read_block_by_subhalo("pos", key, subhalo).values
+                mass = self.read_block_by_subhalo("mass", key, subhalo).values
+
+                r = sqrt(((pos-cm)**2).sum(axis=1))
+
+                sort_ind = r.argsort()
+                sort_r = r[sort_ind]
+                sort_mass = mass[sort_ind]
+                total_mass = sort_mass.cumsum()
+
+                rcut_ind = searchsorted(sort_r, radius) - 1
+                key_mass = total_mass[rcut_ind]
+                mass_inside[key] = key_mass
+                total_mass_inside += key_mass
+            except KeyError:
+                pass
+
+        mass_inside['total'] = total_mass_inside
+        return mass_inside
