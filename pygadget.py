@@ -1,5 +1,49 @@
+# Author: Lucas A. Bignone
+# Contact: lbignone@iafe.uba.ar
+
 from struct import unpack
-from numpy import fromstring
+from numpy import fromstring, fromfile, concatenate
+from numpy import sqrt, searchsorted
+import pandas as pd
+from functools import wraps
+#from astropy.utils.console import ProgressBar
+
+
+particle_keys = [
+    "gas",
+    "halo",
+    "disk",
+    "buldge",
+    "stars",
+    "bndry",
+]
+
+element_keys = [
+    "He",
+    "C",
+    "Mg",
+    "O",
+    "Fe",
+    "Si",
+    "H",
+    "N",
+    "Ne",
+    "S",
+    "Ca",
+    "Zi",
+]
+
+
+def memoize(func):
+    """Memoization decorator"""
+    cache = {}
+
+    @wraps(func)
+    def wrap(*args):
+        if args not in cache:
+            cache[args] = func(*args)
+        return cache[args]
+    return wrap
 
 
 class Simulation:
@@ -33,52 +77,6 @@ class Simulation:
             ('<': little-endian, '>': big-endian).
     """
 
-    particle_keys = [
-        "gas",
-        "halo",
-        "disk",
-        "buldge",
-        "stars",
-        "bndry",
-    ]
-
-    block_keys = [
-        "header",
-        "pos",
-        "vel",
-        "id",
-        "mass",
-        "u",
-        "rho",
-        "ne",
-        "nh",
-        "hsml",
-        "sfr",
-        "age",
-        "metals",
-        "pot",
-        "accel",
-        "endt",
-        "tstp",
-        "esn",
-        "esncold",
-    ]
-
-    element_keys = [
-        "He",
-        "C",
-        "Mg",
-        "O",
-        "Fe",
-        "Si",
-        "H",
-        "N",
-        "Ne",
-        "S",
-        "Ca",
-        "Zi",
-    ]
-
     def __init__(self, name, pot=False,
                  accel=False, endt=False, tstp=False):
         """'Simulation' initialization
@@ -96,12 +94,60 @@ class Simulation:
                 Defaults to False.
         """
 
+        self.cache = {}
+
         self.name = name
         self.flags = {}
         self.flags["pot"] = pot
         self.flags["accel"] = accel
         self.flags["endt"] = endt
         self.flags["tstp"] = tstp
+
+        self.particle_keys = [
+            "gas",
+            "halo",
+            "disk",
+            "buldge",
+            "stars",
+            "bndry",
+        ]
+
+        self.block_keys = [
+            "header",
+            "pos",
+            "vel",
+            "id",
+            "mass",
+            "u",
+            "rho",
+            "ne",
+            "nh",
+            "hsml",
+            "sfr",
+            "age",
+            "metals",
+            "pot",
+            "accel",
+            "endt",
+            "tstp",
+            "esn",
+            "esncold",
+        ]
+
+        self.element_keys = [
+            "He",
+            "C",
+            "Mg",
+            "O",
+            "Fe",
+            "Si",
+            "H",
+            "N",
+            "Ne",
+            "S",
+            "Ca",
+            "Zi",
+        ]
 
         self._read_header()
 
@@ -295,13 +341,15 @@ class Simulation:
             particle_type (str): Type of particle.
 
         Returns:
-            Numpy ndarray containing the block data for the specified particle
-            type.
+            Panda DataFrame containing the block data for the specified
+            particle type, indexed by particles ids
 
-            The shape of the ndarray is specified by the block type. In the
-            case of 'pos', 'vel' and 'accel' blocks, shape = (particle_number,
-            3). For the 'metals' block, shape = (particle_number, number of
-            elements). All other blocks return a 1-dimensional ndarray.
+            The columns in the DataFrame are determined by the block type.
+            In the case of 'pos', 'vel' and 'accel' blocks, columns are 'x',
+            'y' and 'z'. For the 'metals' block, column names correspond to
+            each elemet_type.
+            All other blocks return a 1-column DataFrame named after the
+            block_type.
 
         Raises:
             NameError:  If block limits do not not match expected size.
@@ -310,6 +358,10 @@ class Simulation:
             This functions only works for data blocks, to access header
             information use the `Simulation` class attributes.
         """
+
+        cache_key = (block_type, particle_type)
+        if cache_key in self.cache:
+            return self.cache[cache_key]
 
         s = self.swap
 
@@ -365,6 +417,21 @@ class Simulation:
             shape = block.shape
 
         block.shape = shape
+
+        if block_type in ["pos", "vel", "accel"]:
+            columns = ['x', 'y', 'z']
+        elif block_type in ["metals"]:
+            columns = element_keys
+        else:
+            columns = [block_type]
+
+        if block_type != "id":
+            ids = self.read_block("id", particle_type)
+            block = pd.DataFrame(block, columns=columns, index=ids.values)
+        else:
+            block = pd.Series(block, name="id")
+
+        self.cache[cache_key] = block
 
         return block
 
@@ -428,6 +495,22 @@ class Simulation:
 
         return offset, read_size, remainder
 
+    def filter_by_ids(self, block_type, particle_type, ids=[]):
+        """Return a block filtered by particle ids
+
+        Args:
+            block_type (str):   Type of block.
+            particle_type (str): Type of particle.
+            ids (iterable): list of ids to return
+
+        Returns:
+            Pandas DataFrame as returned by read_block
+        """
+
+        block = self.read_block(block_type, particle_type)
+
+        return block.loc[ids].dropna()
+
     def __repr__(self):
 
         first = '<'
@@ -457,3 +540,401 @@ class Simulation:
         string += "flags: %s" % self.flags
 
         return string
+
+
+class Fof:
+
+    def __init__(self, basedir, num, snap=None):
+        self.basedir = basedir
+        self.num = num
+
+        self.name = basedir
+        self.name += "/groups_{0:03d}/group_tab_{0:03d}.0".format(self.num)
+
+        self._read_header()
+        self._load_catalogue()
+        self._load_ids()
+
+        self.snap = snap
+
+    def _read_header(self):
+
+        header_keys = [
+            "totngroups",
+            "ntask",
+        ]
+        with open(self.name, 'rb') as f:
+
+            f.seek(8, 0)
+            for key in header_keys:
+                value = fromfile(f, dtype="i4", count=1)[0]
+                setattr(self, key, value)
+
+    def _load_catalogue(self):
+
+        basename = self.basedir
+        basename += "/groups_{0:03d}/group_tab_{0:03d}.".format(self.num)
+
+        dims = 3
+        n_particle_types = len(particle_keys)
+
+        array_keys = [
+            "grouplen",
+            "groupoffset",
+            "grouplentype",
+            "groupmasstype",
+            "groupcm",
+            "groupsfr",
+        ]
+
+        self.ngroups = []
+        self.nids = []
+
+        value = {}
+        for i in range(self.ntask):
+            name = basename + "{0}".format(i)
+            with open(name, 'rb') as f:
+
+                ngroups = fromfile(f, dtype="i4", count=1)[0]
+                self.ngroups.append(ngroups)
+
+                nids = fromfile(f, dtype="i4", count=1)[0]
+                self.nids.append(nids)
+
+                f.seek(2*4, 1)
+
+                data_types = {
+                    "grouplen": "({0},)i4".format(ngroups),
+                    "groupoffset": "({0},)i4".format(ngroups),
+                    "grouplentype": "({0},{1})i4".format(ngroups,
+                                                         n_particle_types),
+                    "groupmasstype": "({0},{1})f8".format(ngroups,
+                                                          n_particle_types),
+                    "groupcm": "({0},{1})f4".format(ngroups, dims),
+                    "groupsfr": "({0},)f4".format(ngroups),
+                }
+
+                for key in array_keys:
+                    dt = data_types[key]
+                    data = fromfile(f, dtype=dt, count=1)[0]
+
+                    if i == 0:
+                        value[key] = data
+                    else:
+                        value[key] = concatenate([value[key], data])
+
+        for key in array_keys:
+            setattr(self, key, value[key])
+
+    def _load_ids(self):
+        basename = self.basedir
+        basename += "/groups_{0:03d}/group_ids_{0:03d}.".format(self.num)
+
+        self.ids = []
+        group = 0
+        for i in range(self.ntask):
+            name = basename + "{0}".format(i)
+            with open(name, 'rb') as f:
+                f.seek(4*4, 0)
+                for j in range(self.ngroups[i]):
+                    ids = {}
+                    for p_type_n, particle_type in enumerate(particle_keys):
+                        count = self.grouplentype[group, p_type_n]
+                        ids[particle_type] = fromfile(f, dtype="u4",
+                                                      count=count)
+                    self.ids.append(ids)
+                    group += 1
+
+    def read_block_by_group(self, block_type, particle_type, group):
+        ids = self.ids[group][particle_type]
+        block = self.snap.filter_by_ids(block_type, particle_type, ids)
+
+        return block
+
+
+class Subfind:
+
+    """ Base class for  handling subfind output
+
+    Attributes:
+        basedir (str): Base directory for subfind output
+        basename (str): Base name for subfind output
+        num (int): Number of subfind output
+        snap (Simulation): Associated Simulation object
+        ngroups (int): Number of halos
+        nsubhalos (int): Number of subhalos
+        nids (int): Number of particles
+        ids (list): List containing arrays with ids for particles in each
+                    subhalo
+        nsubperhalo (array): Number of subhalos per halo
+        firstsubofhalo (array): First subhalo index per halo
+        sublen (array): Size of each subhalo
+        suboffset (array): Offset index from the beginning for each subhalo
+        subparenthalo (array): Parent halo of each subhalo
+        halo_m_mean200 (array):
+        halo_r_mean200 (array):
+        halo_m_crit200 (array):
+        halo_r_crit200 (array):
+        halo_m_tophat200 (array):
+        halo_r_tophat200 (array):
+        subpos (2d array): Subhalo position
+        subvel (2d array): Subhalo velocities
+        subveldisp (2d array): Subhalo velocity dispersions
+        subvmax (2d array): Subhalo maximum velocity
+        subspin (2d array): Subhalo spin
+        submostboundid (array): Subhalo id for most bound particle
+        subhalfmass (array): Half mass of each subhalo
+    """
+
+    def __init__(self, basedir, num, snap=None):
+        """Subfind initialization
+
+        Args:
+            basedir: Subfind base directory
+            num: Subfind number
+            snap: Associated Simulation object
+        """
+
+        self.basedir = basedir + "/postproc_{0:03d}/".format(num)
+        self.num = num
+        self.snap = snap
+
+        self.basename = basedir
+        self.basename += "/postproc_{0:03d}/sub_tab_{0:03d}.".format(self.num)
+
+        folder = "/postproc_{0:03d}/".format(self.num)
+        self.locationsname = basedir + folder + "locations.h5"
+
+        self._read_header()
+        self._load_catalogue()
+        self._load_ids()
+
+    def _read_header(self):
+        """Read subfind header. Store ngrous, nids and nsubhalos"""
+
+        name = self.basedir + "sub_tab_{0:03d}.{1}".format(self.num, 0)
+
+        self.ngroups = []
+        self.nids = []
+        header_keys = [
+            "totngroups",
+            "ntask",
+        ]
+        self.nsubhalos = []
+        with open(name, 'rb') as f:
+            f.seek(8, 0)
+            for key in header_keys:
+                value = fromfile(f, dtype="i4", count=1)[0]
+                setattr(self, key, value)
+
+        self.ntask = 1
+
+        for i in range(self.ntask):
+            name = self.basename + "{0}".format(i)
+
+            with open(name, 'rb') as f:
+                f.seek(0, 0)
+                value = fromfile(f, dtype="i4", count=1)[0]
+                self.ngroups.append(value)
+
+                value = fromfile(f, dtype="i4", count=1)[0]
+                self.nids.append(value)
+
+                f.seek(8, 1)
+
+                value = fromfile(f, dtype="i4", count=1)[0]
+                self.nsubhalos.append(value)
+
+    def _load_catalogue(self):
+        """Loads subfind catalogue"""
+
+        array_keys = [
+            "nsubperhalo",
+            "firstsubofhalo",
+            "sublen",
+            "suboffset",
+            "subparenthalo",
+            "halo_m_mean200",
+            "halo_r_mean200",
+            "halo_m_crit200",
+            "halo_r_crit200",
+            "halo_m_tophat200",
+            "halo_r_tophat200",
+            "subpos",
+            "subvel",
+            "subveldisp",
+            "subvmax",
+            "subspin",
+            "submostboundid",
+            "subhalfmass",
+        ]
+
+        dims = 3
+        value = {}
+        for i in range(self.ntask):
+            name = self.basedir + "sub_tab_{0:03d}.{1}".format(self.num, i)
+            ngroups = self.ngroups[i]
+            nsubhalos = self.nsubhalos[i]
+
+            data_types = {
+                "nsubperhalo": "({0},)i4".format(ngroups),
+                "firstsubofhalo": "({0},)i4".format(ngroups),
+
+                "sublen": "({0},)i4".format(nsubhalos),
+                "suboffset": "({0},)i4".format(nsubhalos),
+                "subparenthalo": "({0},)i4".format(nsubhalos),
+
+                "halo_m_mean200": "({0},)f4".format(ngroups),
+                "halo_r_mean200": "({0},)f4".format(ngroups),
+                "halo_m_crit200": "({0},)f4".format(ngroups),
+                "halo_r_crit200": "({0},)f4".format(ngroups),
+                "halo_m_tophat200": "({0},)f4".format(ngroups),
+                "halo_r_tophat200": "({0},)f4".format(ngroups),
+
+                "subpos": "({0},{1})f4".format(nsubhalos, dims),
+                "subvel": "({0},{1})f4".format(nsubhalos, dims),
+                "subspin": "({0},{1})f4".format(nsubhalos, dims),
+
+                "subveldisp": "({0},)f4".format(nsubhalos),
+                "subvmax": "({0},)f4".format(nsubhalos),
+                "subhalfmass": "({0},)f4".format(nsubhalos),
+
+                "submostboundid": "({0},)i8".format(nsubhalos),
+            }
+            with open(name, 'rb') as f:
+                f.seek(5*4, 0)
+                for key in array_keys:
+                    dt = data_types[key]
+                    data = fromfile(f, dtype=dt, count=1)[0]
+
+                    if i == 0:
+                        value[key] = data
+                    else:
+                        value[key] = concatenate([value[key], data])
+
+        for key in array_keys:
+            setattr(self, key, value[key])
+
+    def _load_ids(self):
+        """Populates the ids list attribute with id arrays for particles
+        in each subhalo
+        """
+        basename = self.basedir
+        basename += "sub_ids_{0:03d}.".format(self.num)
+
+        for i in range(self.ntask):
+            name = basename + "{0}".format(i)
+            with open(name, 'rb') as f:
+                f.seek(4*4, 0)
+                nids = self.nids[i]
+                ids = fromfile(f, dtype="i8", count=nids)
+            if i == 0:
+                all_ids = ids
+            else:
+                all_ids = concatenate(self.ids, ids)
+
+        self.ids = []
+        for sub in range(self.nsubhalos[0]):
+            nmin = self.suboffset[sub]
+            nmax = nmin + self.sublen[sub]
+            self.ids.append(all_ids[nmin:nmax])
+
+    def read_block_by_subhalo(self, block_type, particle_type, subhalo):
+        """Read snapshot block  filtered by subhalo
+
+        Args:
+            block_type (str):   Type of block.
+            particle_type (str): Type of particle.
+            subhalo (int): number of subhalo to read
+
+        Returns:
+            Pandas DataFrame as returned by read_block
+        """
+
+        block = self.snap.read_block(block_type, particle_type)
+
+        sub_ids = self.ids[subhalo]
+
+        return block.loc[sub_ids].dropna()
+
+    def optical_radius(self, subhalo, factor=0.83, rcut=30.0):
+        """Compute optical radius for a given subhalo
+
+        Args:
+            subhalo: subhalo
+            factor (default = 0.83): mass factor to multiply the total mass.
+            rcut (default = 30.0): radius at witch to compute the total mass.
+
+        Returns:
+            Optical radius in gadget internal Units.
+            If no baryons are present returns 0.0
+        """
+
+        cm = self.subpos[subhalo]
+
+        pos_stars = self.read_block_by_subhalo("pos", "stars", subhalo)
+        mass_stars = self.read_block_by_subhalo("mass", "stars", subhalo)
+
+        pos_gas = self.read_block_by_subhalo("pos", "gas", subhalo)
+        mass_gas = self.read_block_by_subhalo("mass", "gas", subhalo)
+
+        pos = concatenate([pos_stars, pos_gas])
+        mass = concatenate([mass_stars, mass_gas])
+
+        if (mass.size == 0):
+            return 0.0
+
+        r = sqrt(((pos-cm)**2).sum(axis=1))
+
+        sort_ind = r.argsort()
+        sort_r = r[sort_ind]
+        sort_mass = mass[sort_ind]
+        total_mass = sort_mass.cumsum()
+
+        rcut_ind = searchsorted(sort_r, rcut) - 1
+
+        mcut = total_mass[rcut_ind]
+        mass_factor = factor * mcut
+
+        ropt_ind = searchsorted(total_mass, mass_factor) - 1
+
+        return sort_r[ropt_ind]
+
+    def mass_inside_radius(self, radius, subhalo, particle_keys=particle_keys):
+        """Compute subhalo mass inside a given radius
+
+        Args:
+            radius: radius in Gadget internal units
+            subhalo: subhalo number
+            particle_keys (optional): list containing particles types for witch
+            to compute the mass
+
+        Returns:
+            Dictionary containing mass inside radius for each particle
+            type specified in particle_keys
+        """
+
+        mass_inside = {}
+        total_mass_inside = 0
+        cm = self.subpos[subhalo]
+        for key in particle_keys:
+            try:
+                pos = self.read_block_by_subhalo("pos", key, subhalo).values
+                mass = self.read_block_by_subhalo("mass", key, subhalo).values
+
+                r = sqrt(((pos-cm)**2).sum(axis=1))
+
+                sort_ind = r.argsort()
+                sort_r = r[sort_ind]
+                sort_mass = mass[sort_ind]
+                total_mass = sort_mass.cumsum()
+
+                rcut_ind = searchsorted(sort_r, radius) - 1
+                key_mass = total_mass[rcut_ind]
+                mass_inside[key] = key_mass
+                total_mass_inside += key_mass
+            except KeyError:
+                pass
+
+        mass_inside['total'] = total_mass_inside
+        return mass_inside
