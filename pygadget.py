@@ -938,3 +938,19 @@ class Subfind:
 
         mass_inside['total'] = total_mass_inside
         return mass_inside
+
+    def __repr__(self):
+
+        first = '<'
+        last = '>'
+        delimiter = ' | '
+
+        nsubhalos = self.nsubhalos[0]
+        nids = self.nids[0]
+
+        string = first + self.basedir + delimiter
+        string += "nsubhalos: {nsubhalos}" + delimiter + "nids: {nids}"
+        string += last
+        string = string.format(nsubhalos=nsubhalos, nids=nids)
+
+        return string
