@@ -6,9 +6,8 @@ to provide a fast and intuitive way to access cosmological simulation data.
 
 ## Requirements
 
-There is only one requirement:
-
 * [Numpy][numpy]
+* [Pandas][pandas]
 
 ## Basic usage
 
@@ -77,23 +76,30 @@ And accepted keywords for particle types are:
 * "stars"
 * "bndry"
 
-Most block types return a 1D ndarray. The exceptions being "pos", "vel" and
-"accel" which return a 2D ndarray with three columns representing Cartesian
-axis. And "metals" which return a 2D array with 12 columns representing each of
-the chemical elements consider in the simulation.
+Most block types return a single column Pandas Dataframe. The exceptions being
+"pos", "vel" and "accel" which return a dataframe with three columns ('x',
+'y', 'z') representing Cartesian axis. And "metals" which return a DataFrame
+with 12 columns representing each of the chemical elements consider in the
+simulation.
 
-Slicing and array operations can be used to manipulate data. For example:
+Check the Pandas [Intro to Data Structures](http://pandas.pydata.org/pandas-docs/dev/dsintro.html) for a primer on DataFrames manipulation and slicing.
+
+For example 
 
     composition = snap.read_block("metals", "stars")
-    composition[:,0]
+    composition.He
 
 Should return the helium mass content for every stellar particle in the
 snapshot. Similarly:
 
     halo_pos = snap.read_block("pos", "halo")
-    pos[:,1]
+    pos.y
 
 Should return the 'y' coordinate for every halo particle.
+
+As blocks are index by particle ID, you should be careful on how you select
+rows. More information on the [Idexing/Selection](http://pandas.pydata.org/pandas-docs/dev/dsintro.html#indexing-selection) section of the Pandas documentation.
+
 
 ## Subfind
 
@@ -135,3 +141,4 @@ to calculate the mass inside a give radius
 * Endianness was considered but is untested
 
 [numpy]: http://www.numpy.org/
+[pandas]: http://pandas.pydata.org/
